@@ -33,16 +33,22 @@ int main (int argc, char **argv)
     readArguments(argc, argv, &n, &m);
     printf("n: %d, m: %d\n", n, m);
     int pipes[2*n][2];
-    for(int i = 0; i < 2*n; i++)
+    for(int i = 0; i < 2*n; i++) //create 2n pipes - 2 pieps for each child
     {
         if(pipe(pipes[i]))
             ERR("pipe");
     }
-
-    
-
     create_children(n, pipes, m);
     parent_work(n, m, pipes);
+
+    for(int i = 0; i < 2*n; i++)
+    {
+        if(TEMP_FAILURE_RETRY(close(pipes[i][0])))
+            ERR("close");
+        if(TEMP_FAILURE_RETRY(close(pipes[i][1])))
+            ERR("close");
+    }
+
     return 0;
 }
 
@@ -66,7 +72,7 @@ void create_children(int n, int pipes[][2], int m)
 {
     for(int i = 0; i < n; i++)
     {
-        switch(fork())
+        switch(fork()) //create n children
         {
             case 0:
             {   //close unsued pipes
@@ -97,7 +103,7 @@ void child_work(int write_fd, int read_fd, int m)
     srand(getpid());
     for(int i = 0; i < m; i++)
     {
-        if (TEMP_FAILURE_RETRY(read(read_fd, &buf, sizeof(buf)) != sizeof(buf)))
+        if (TEMP_FAILURE_RETRY(read(read_fd, &buf, sizeof(buf)) != sizeof(buf))) //read message from parent - waiting for "new_round"
         {
             if (errno == EPIPE)
             {
@@ -118,15 +124,15 @@ void child_work(int write_fd, int read_fd, int m)
             ERR("wrong message");
         }
         int amIDead = rand()%100;
-        if(amIDead < 5)
+        if(amIDead < 5) //at each round there is 5% chance that child will die. -1 is sent to parent
         {
             number = -1;
         }
         else
         {
-            number = rand() % m + 1;
+            number = rand() % m + 1; // random number from 1 to m
         }
-        if (TEMP_FAILURE_RETRY(write(write_fd, &number, sizeof(int)) != sizeof(int)))
+        if (TEMP_FAILURE_RETRY(write(write_fd, &number, sizeof(int)) != sizeof(int))) // send number to parent
         {
             if (errno == EPIPE)
             {
@@ -141,7 +147,7 @@ void child_work(int write_fd, int read_fd, int m)
                 ERR("write");
             }
         }
-        if(number == -1)
+        if(number == -1) //if child is dead, close pipes and exit
         {
             if(TEMP_FAILURE_RETRY(close(write_fd)))
                 ERR("close");
@@ -156,9 +162,9 @@ void child_work(int write_fd, int read_fd, int m)
 void parent_work(int n, int m, int pipes[][2])
 {
     char message[10] = "new_round";
-    int total[n];
-    int scores[n];
-    int alive[n];
+    int total[n]; //total points for each player
+    int scores[n]; //current round scores for each player
+    int alive[n]; //is player alive
     for (int i = 0; i < n; ++i) {
         alive[i] = 1; // 1 - alive, 0 - dead
         scores[i] = 0;
@@ -170,7 +176,7 @@ void parent_work(int n, int m, int pipes[][2])
         printf("new round: %d\n", m);
         for(int i = 0; i < n; i++)
         {
-            if(alive[i] == 0)
+            if(alive[i] == 0) //if player is dead, skip
             {
                 continue;
             }
@@ -192,7 +198,7 @@ void parent_work(int n, int m, int pipes[][2])
                 }
             }
 
-            if(alive[i] == 0)
+            if(alive[i] == 0) //if player is dead, skip
             {
                 continue;
             }
@@ -213,7 +219,7 @@ void parent_work(int n, int m, int pipes[][2])
                     ERR("read");
                 }
             }
-            if(number == -1)
+            if(number == -1) //if player send -1, close pipes and set alive to 0
             {
                 if(TEMP_FAILURE_RETRY(close(pipes[2*i][1])))
                     ERR("close");
@@ -228,7 +234,7 @@ void parent_work(int n, int m, int pipes[][2])
         }
 
 
-        int max_number = 0;
+        int max_number = 0; //calculating score for each player
         for (int j = 0; j < n; j++) 
         {
             if (scores[j] > max_number) 
